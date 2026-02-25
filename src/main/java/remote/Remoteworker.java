@@ -1,4 +1,4 @@
-package org.example;
+package remote;
 
 import org.eclipse.paho.client.mqttv3.*;
 
