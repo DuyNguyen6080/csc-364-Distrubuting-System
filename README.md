@@ -1,1 +1,1 @@
-CSC 364-distribute-system
+CSC 364-distrubute-system
