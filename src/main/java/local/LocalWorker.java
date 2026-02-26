@@ -42,7 +42,7 @@ public class LocalWorker implements Runnable {
                 System.out.println("\t Localworker result: " + result);
             }
             try {
-                Thread.sleep(1000);
+                Thread.sleep(10000);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }

@@ -8,6 +8,7 @@ public class Main {
     public static void main(String[] args) {
 
         int cpuCore = Runtime.getRuntime().availableProcessors();
+        //System.out.println("cpu available: " + cpuCore );
         Vector<Thread> remoteWorkerThread = new Vector<>();
         for(int i = 0; i < 1; i++) {
             remoteWorkerThread.add(new Thread(new Remoteworker()));

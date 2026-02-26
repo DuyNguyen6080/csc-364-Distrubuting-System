@@ -22,29 +22,29 @@ public class Buffer {
         return problem.isEmpty();
     }
     public void addJob(Job job) {
-        lock.lock();
+
         try {
+            semaphore.acquire();
             problem.add(job);
            // System.out.println("Buffer add " + job.getString());
         }catch (Exception e) {
-            //System.out.println("Buffer error addJob" + job.getString() );
+            System.out.println("Buffer error addJob" + e.getMessage() );
+        } finally {
+            semaphore.release();
         }
-        lock.unlock();
+
     }
     public Job getJob() {
         Job job = null;
         try {
-            semaphore.acquire();
+            lock.lock();
             job = problem.poll();
             //System.out.println("Buffert getJob: " + job.getString());
 
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
         } catch (Exception e) {
             System.out.println("getJob(): " + e);
-        }finally {
-            semaphore.release();
         }
+        lock.unlock();
         return job;
     }
 }

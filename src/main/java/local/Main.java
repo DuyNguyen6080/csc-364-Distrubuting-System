@@ -9,23 +9,24 @@ public class Main {
         int cpuCore = Runtime.getRuntime().availableProcessors();
 
         Thread producerThread = new Thread(new Producer(Buffer.getInstance()));
-        cpuCore--;
+
 
         Vector<Thread> LocalWorker = new Vector<Thread>();
-        for(int i = 0; i < cpuCore; i++) {
+        for(int i = 0; i < cpuCore/2; i++) {
             LocalWorker.add(new Thread(new LocalWorker(Buffer.getInstance())));
-            cpuCore--;
+
         }
 
         Thread outsourcerThread = new Thread(Outsourcer.getInstance());
-        cpuCore--;
+
 
 
         producerThread.start();
+
         outsourcerThread.start();
         for(int i = 0; i < LocalWorker.size(); i++) {
             LocalWorker.get(i).start();
-            cpuCore--;
+
         }
     }
 }

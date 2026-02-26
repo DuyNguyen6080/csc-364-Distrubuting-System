@@ -38,7 +38,7 @@ public class Remoteworker implements Runnable, MqttCallback {
                 if(client.isConnected()) {
                     client.publish(topic_request, message);
 
-                    //System.out.println("Remoteworker: "+"↗️ published to " + topic_request + ": " + message);
+                    System.out.println("Remoteworker: "+"↗️ published to " + topic_request + ": " + message);
 
                 }
                 Thread.sleep(1000);

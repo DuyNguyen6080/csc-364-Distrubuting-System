@@ -45,7 +45,10 @@ public class Outsourcer implements Runnable, MqttCallback {
             int counter;
             while (true){
                 if (job.isEmpty()) {
-                    job.add(Buffer.getInstance().getJob());
+                    if(!Buffer.getInstance().isEmpty()) {
+                        job.add(Buffer.getInstance().getJob());
+                    }
+
                 }
                 Thread.sleep(1000);
             }
