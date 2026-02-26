@@ -3,6 +3,8 @@ package local;
 public class LocalWorker implements Runnable {
     private Buffer instanceBuffer = null;
     public LocalWorker(Buffer buffer) {
+        System.out.println("Localworker Initialize");
+
         instanceBuffer = Buffer.getInstance();
     }
 
@@ -10,8 +12,7 @@ public class LocalWorker implements Runnable {
         return instanceBuffer.getJob();
     }
 
-    int doWork() {
-        Job job = getWork();
+    int doWork(Job job) {
 
         Integer operand1 = job.getIntOperand1();
         String operator = job.getOperator();
@@ -32,10 +33,20 @@ public class LocalWorker implements Runnable {
 
     @Override
     public void run() {
+        System.out.println("Localworker running");
+        while (true) {
+            Job temp_Job = getWork();
+            if(temp_Job != null) {
+                int result = doWork(temp_Job);
+                System.out.println("\tLocalworker Job: " + temp_Job.getString());
+                System.out.println("\t Localworker result: " + result);
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
 
-        while (!instanceBuffer.isEmpty()) {
-            int result = doWork();
-            System.out.println("Local worker result: " + result);
         }
 
 

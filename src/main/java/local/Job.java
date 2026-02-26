@@ -67,8 +67,9 @@ public class Job {
     public int getIntOperand2() {
         return Integer.parseInt(operand2);
     }
+
     public String getOperator() {
-        return operand1;
+        return operator;
     }
     public int getIntOperator() {
         return Integer.parseInt(operator);

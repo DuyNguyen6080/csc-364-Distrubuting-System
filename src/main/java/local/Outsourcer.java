@@ -14,7 +14,7 @@ public class Outsourcer implements Runnable, MqttCallback {
     private  String topic_request = "works/request";
     private  String topic_assign = "works/assign";
     private Queue<String> workers = new LinkedList<>();
-    private Queue<String> result = new LinkedList<>();
+    //private Queue<String> result = new LinkedList<>();
     private Queue<Job> job = new LinkedList<>();
     MqttClient client = null;
     private Outsourcer() {
@@ -22,7 +22,7 @@ public class Outsourcer implements Runnable, MqttCallback {
         this.topic_request = "works/request";
         this.topic_assign = "works/assign";
         this.workers = new LinkedList<>();
-        this.result = new LinkedList<>();
+
     }
     public static Outsourcer getInstance() {
         if (outsourcer == null) {
@@ -55,6 +55,8 @@ public class Outsourcer implements Runnable, MqttCallback {
         } catch (InterruptedException e) {
             System.out.println("↗️ Outsourcer Demo interrupted.");
             Thread.currentThread().interrupt();
+        }catch (Exception e) {
+            System.out.println("Outsourcer Exception" + e.getMessage());
         } finally {
             if (client == null && client.isConnected()) {
                 try {

@@ -17,12 +17,12 @@ public class Main {
             cpuCore--;
         }
 
-        //Thread outsourcerThread = new Thread(Outsourcer.getInstance());
+        Thread outsourcerThread = new Thread(Outsourcer.getInstance());
         cpuCore--;
 
 
         producerThread.start();
-        //outsourcerThread.start();
+        outsourcerThread.start();
         for(int i = 0; i < LocalWorker.size(); i++) {
             LocalWorker.get(i).start();
             cpuCore--;

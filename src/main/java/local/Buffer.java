@@ -8,7 +8,7 @@ import java.util.concurrent.locks.ReentrantLock;
 public class Buffer {
 
     private static  Buffer buffer = null;
-    private Semaphore semaphore = new Semaphore(Runtime.getRuntime().availableProcessors());
+    private Semaphore semaphore = new Semaphore(10);
     private final ReentrantLock lock = new ReentrantLock();
     private Queue<Job> problem = new LinkedList<>();
     private Buffer() {}
