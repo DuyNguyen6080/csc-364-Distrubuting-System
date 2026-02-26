@@ -31,37 +31,48 @@ public class Remoteworker implements Runnable, MqttCallback {
             client.setCallback(this);
             client.connect();
             client.subscribe(topic_assign + "/" + client.getClientId());
-            System.out.println("Remote workker: " + workerId + " ↗️ Connected to broker: " + BROKER_URL);
+            System.out.println("Remoteworker: " + workerId + " ↗️ Connected to broker: " + BROKER_URL);
 
             int counter;
-            {
+            while (true){
                 if(client.isConnected()) {
                     client.publish(topic_request, message);
 
-                    System.out.println("Remote workker: "+"↗️ published to " + topic_request + ": " + message);
+                    //System.out.println("Remoteworker: "+"↗️ published to " + topic_request + ": " + message);
 
                 }
                 Thread.sleep(1000);
             }
         } catch (MqttException e) {
-            System.out.println("↗️ MQTT error: " + e.getMessage());
+            System.out.println("↗️Remoteworker MQTT error: " + e.getMessage());
             e.printStackTrace();
         } catch (InterruptedException e) {
-            System.out.println("↗️ Demo interrupted.");
+            System.out.println("↗️Remoteworker Demo interrupted.");
             Thread.currentThread().interrupt();
         } finally {
             if (client == null && client.isConnected()) {
                 try {
                     client.disconnect();
-                    System.out.println("↗️ Disconnected from broker.");
+                    System.out.println("↗️Remoteworker Disconnected from broker.");
                 }catch (MqttException e) {
-                    System.err.println("↗️ Error disconnecting: " + e.getMessage());
+                    System.err.println("↗️Remoteworker Error disconnecting: " + e.getMessage());
                 }
             }
         }
     }
-    public String doWork(String work) {
-        return "1999";
+    public Integer doWork(String work) {
+
+        String[] words = work.split(" ");
+        Integer operand1 = Integer.parseInt(words[0]);
+        String operator = words[1];
+        Integer operand2 = Integer.parseInt(words[2]);
+        return switch (operator) {
+            case "1" -> (operand1 + operand2);
+            case "2" -> operand1 - operand2;
+            case "3" -> operand1 * operand2;
+            case "4" -> operand1 / operand2;
+            default -> -999999999;
+        };
     }
     public void sendresult(String result){
         try {
@@ -70,24 +81,25 @@ public class Remoteworker implements Runnable, MqttCallback {
                 MqttMessage test_msg = new MqttMessage(result.getBytes());
                 test_msg.setQos(2);
                 client.publish(temp_topic, test_msg);
-                System.out.println("Sending result from worker: " + new String(test_msg.getPayload()));
+                System.out.println("\tRemoteworker Sending back result: " + new String(test_msg.getPayload()) + " from topic" + client.getClientId());
             }
         } catch (MqttException e) {
-            System.out.println("↗️ MQTT error: " + e.getMessage());
+            System.out.println("↗️Remoteworker MQTT error: " + e.getMessage());
             e.printStackTrace();
         }
     }
     @Override
     public void connectionLost(Throwable cause) {
-        System.out.println("📥 Connection to broker lost: " + cause.getMessage());
+        System.out.println("📥Remoteworker Connection to broker lost: " + cause.getMessage());
     }
 
     @Override
     public void messageArrived(String topic, MqttMessage message) {
         String payload = new String(message.getPayload());
-        System.out.println("Remote worker got " + " 📥 Delivery :: " + "[" + topic + " : " + message.getQos() + "] :: " + payload);
+        System.out.println("Remoteworker receive " + " 📥 Delivery :: " + "[" + topic + " : " + message.getQos() + "] :: " + payload);
         if (topic.equals(topic_assign + "/" + client.getClientId())) {
-            String result = doWork(payload);
+            Integer Int_result = doWork(payload);
+            String result = Int_result.toString();
             sendresult(result);
         }
     }
@@ -95,9 +107,9 @@ public class Remoteworker implements Runnable, MqttCallback {
     @Override
     public void deliveryComplete(IMqttDeliveryToken token) {
         try {
-            System.out.println("📥 Remoteworker Delivery complete for: " + token.getMessageId());
+            //System.out.println("📥 Remoteworker Delivery complete for: " + token.getMessageId());
         } catch (Exception e) {
-            System.out.println("📥 Delivery complete, but failed to get message ID.");
+            System.out.println("📥 Remoteworker Delivery complete, but failed to get message ID.");
         }
     }
 
