@@ -26,9 +26,10 @@ public class Outsourcer implements Runnable, MqttCallback {
     private final Map<String, Long> pendingTimestamp = new ConcurrentHashMap<>();
     private final Map<Job, Long> jobQueueTimestamp = new ConcurrentHashMap<>();
 
-    private static final long TIMEOUT_MS = 3000;
-    private static final long TIMER_INTERVAL_SEC = 1L;
-    private static final long LOOP_SLEEP_MS = 500;
+    private static final long TIMEOUT_MS = 5000;
+    private static final long TIMER_INTERVAL_SEC = 2L;
+    private static final long LOOP_SLEEP_MS = 5000;
+    private static final int MAX_QUEUE_SIZE = 3;
 
     private MqttClient client = null;
     private ScheduledExecutorService timerService;
@@ -59,13 +60,17 @@ public class Outsourcer implements Runnable, MqttCallback {
             timerService.scheduleAtFixedRate(this::checkTimeouts, TIMER_INTERVAL_SEC, TIMER_INTERVAL_SEC, TimeUnit.SECONDS);
 
             while (true) {
+                synchronized (jobQueue) {
                 // Pull a job from the shared Buffer and hold it ready to assign
-                    Job job = Buffer.getInstance().getJob();
-                    if (job != null) {
-                        jobQueue.add(job);
-                        jobQueueTimestamp.put(job, System.currentTimeMillis());
+                    if (jobQueue.size() < MAX_QUEUE_SIZE) {
+                        Job job = Buffer.getInstance().getJob();
+                        if (job != null) {
+                            jobQueue.add(job);
+                            jobQueueTimestamp.put(job, System.currentTimeMillis());
+                        }
                         System.out.println("Outsourcer: picked up job -> " + job.getString());
                     }
+                }
 
                 Thread.sleep(LOOP_SLEEP_MS);
             }
@@ -102,8 +107,10 @@ public class Outsourcer implements Runnable, MqttCallback {
             if (timedOutJob != null) {
                 System.out.println("Outsourcer: TIMEOUT — worker " + workerId
                         + " went silent, re-queuing job: " + timedOutJob.getString());
-                ((LinkedList<Job>) jobQueue).addFirst(timedOutJob);
-                jobQueueTimestamp.put(timedOutJob, System.currentTimeMillis());
+                synchronized (jobQueue) {
+                    ((LinkedList<Job>) jobQueue).addFirst(timedOutJob);
+                    jobQueueTimestamp.put(timedOutJob, System.currentTimeMillis());
+                }
             }
         }
 
@@ -128,14 +135,17 @@ public class Outsourcer implements Runnable, MqttCallback {
                 + " jobs pending, " + jobQueue.size() + " jobs waiting to assign");
     }
 
-    public void sendWork(String workerId, String encodedJob) {
+    public void sendWork(String workerId, Job job) {
         try {
             if (client != null && client.isConnected()) {
+                String encodedJob = job.getEncode();
                 String workerTopic = topic_assign + "/" + workerId;
                 MqttMessage msg = new MqttMessage(encodedJob.getBytes());
                 msg.setQos(2);
                 client.publish(workerTopic, msg);
-                System.out.println("Outsourcer: sent job to " + workerId + " -> " + encodedJob);
+                System.out.println("Outsourcer: sent job to " + workerId
+                        + " -> display: " + job.getString()
+                        + " encoded: " + encodedJob);
             }
         } catch (MqttException e) {
             System.out.println("Outsourcer MQTT error: " + e.getMessage());
@@ -166,29 +176,40 @@ public class Outsourcer implements Runnable, MqttCallback {
 
             // If we have a job ready, assign it immediately
             if (!jobQueue.isEmpty()) {
-                String nextWorker = workers.poll();
-                Job job = jobQueue.poll();
-                jobQueueTimestamp.remove(job);
+                synchronized (jobQueue) {
+                    String nextWorker = workers.poll();
+                    Job job = jobQueue.poll();
+                    jobQueueTimestamp.remove(job);
 
-                pendingJobs.put(nextWorker, job);
-                pendingTimestamp.put(nextWorker, System.currentTimeMillis());
+                    pendingJobs.put(nextWorker, job);
+                    pendingTimestamp.put(nextWorker, System.currentTimeMillis());
 
-                sendWork(nextWorker, job.getEncode());
+                    sendWork(nextWorker, job);
+                }
             }
         }
 
         if (topic.equals(topic_assign)) {
-
             Map<String, String> m = parseKV(payload);
             String workerId = m.get("workerId");
             String result   = m.get("result");
+            String job      = m.get("job");
 
             if (workerId != null && pendingJobs.containsKey(workerId)) {
-                Job originalJob = pendingJobs.remove(workerId);
-                pendingTimestamp.remove(workerId);
-                System.out.println("Outsourcer: result for job ["
-                        + originalJob.getString() + "] = " + result
-                        + " (from worker " + workerId + ")");
+                Job originalJob = pendingJobs.get(workerId);
+
+
+                if (job != null && job.trim().equals(originalJob.getEncode().trim())) {
+                    pendingJobs.remove(workerId);
+                    pendingTimestamp.remove(workerId);
+                    System.out.println("Outsourcer: result for job ["
+                            + originalJob.getString() + "] = " + result
+                            + " (from worker " + workerId + ")");
+                } else {
+
+                    System.out.println("Outsourcer: DISCARDED stale result for job ["
+                            + job + "] = " + result + " (expected: " + originalJob.getEncode() + ")");
+                }
             } else {
                 System.out.println("Outsourcer: received result -> " + payload);
             }

@@ -12,7 +12,7 @@ public class Remoteworker implements Runnable, MqttCallback {
     private final String topic_assign = "works/assign";
     private String workerId;
     private int cpuCores;
-    private static final long REQUEST_INTERVAL_MS = 1000;
+    private static final long REQUEST_INTERVAL_MS = 3000;
     private static final long WORK_DELAY_MS = 3000;
     MqttClient client = null;
     @Override
@@ -35,12 +35,11 @@ public class Remoteworker implements Runnable, MqttCallback {
             client.subscribe(topic_assign + "/" + client.getClientId());
             System.out.println("Remoteworker: " + workerId + " ↗️ Connected to broker: " + BROKER_URL);
 
-            int counter;
             while (true){
                 if(client.isConnected()) {
                     client.publish(topic_request, message);
 
-                    System.out.println("Remoteworker: "+"↗️ published to " + topic_request + ": " + message);
+                    System.out.println("Remoteworker: "+ workerId + " requesting work ...");
 
                 }
                 Thread.sleep(REQUEST_INTERVAL_MS);
@@ -80,14 +79,13 @@ public class Remoteworker implements Runnable, MqttCallback {
             default -> -999999999;
         };
     }
-    public void sendResult(int result) {
+    public void sendResult(String resultPayload) {
         try {
             if (client != null && client.isConnected()) {
-                String payload = "workerId=" + workerId + ";result=" + result;
-                MqttMessage msg = new MqttMessage(payload.getBytes());
-                msg.setQos(2);
+                MqttMessage msg = new MqttMessage(resultPayload.getBytes());
+                msg.setQos(1);
                 client.publish(topic_assign, msg);
-                System.out.println("Remoteworker: " + workerId + " sent result -> " + result);
+                System.out.println("Remoteworker: " + workerId + " sent -> " + resultPayload);
             }
         } catch (MqttException e) {
             System.out.println("Remoteworker MQTT error: " + e.getMessage());
@@ -101,12 +99,12 @@ public class Remoteworker implements Runnable, MqttCallback {
     @Override
     public void messageArrived(String topic, MqttMessage message) {
         String payload = new String(message.getPayload());
-        System.out.println("Remoteworker " + workerId + " received :: ["
-                + topic + " : " + message.getQos() + "] :: " + payload);
+        System.out.println("Remoteworker " + workerId + " received :: [" + topic + "] :: " + payload);
 
         if (topic.equals(topic_assign + "/" + client.getClientId())) {
             int result = doWork(payload);
-            sendResult(result);
+            String resultPayload = "workerId=" + workerId + ";job=" + payload.trim() + ";result=" + result;
+            sendResult(resultPayload);
         }
     }
 
