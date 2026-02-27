@@ -50,7 +50,7 @@ public class Remoteworker implements Runnable, MqttCallback {
             System.out.println("↗️Remoteworker Demo interrupted.");
             Thread.currentThread().interrupt();
         } finally {
-            if (client == null && client.isConnected()) {
+            if (client != null && client.isConnected()) {
                 try {
                     client.disconnect();
                     System.out.println("↗️Remoteworker Disconnected from broker.");
@@ -74,18 +74,17 @@ public class Remoteworker implements Runnable, MqttCallback {
             default -> -999999999;
         };
     }
-    public void sendresult(String result){
+    public void sendResult(int result) {
         try {
-            if (client.isConnected()) {
-                String temp_topic = topic_assign ;
-                MqttMessage test_msg = new MqttMessage(result.getBytes());
-                test_msg.setQos(2);
-                client.publish(temp_topic, test_msg);
-                System.out.println("\tRemoteworker Sending back result: " + new String(test_msg.getPayload()) + " from topic" + client.getClientId());
+            if (client != null && client.isConnected()) {
+                String payload = "workerId=" + workerId + ";result=" + result;
+                MqttMessage msg = new MqttMessage(payload.getBytes());
+                msg.setQos(2);
+                client.publish(topic_assign, msg);
+                System.out.println("Remoteworker: " + workerId + " sent result -> " + result);
             }
         } catch (MqttException e) {
-            System.out.println("↗️Remoteworker MQTT error: " + e.getMessage());
-            e.printStackTrace();
+            System.out.println("Remoteworker MQTT error: " + e.getMessage());
         }
     }
     @Override
@@ -96,11 +95,12 @@ public class Remoteworker implements Runnable, MqttCallback {
     @Override
     public void messageArrived(String topic, MqttMessage message) {
         String payload = new String(message.getPayload());
-        System.out.println("Remoteworker receive " + " 📥 Delivery :: " + "[" + topic + " : " + message.getQos() + "] :: " + payload);
+        System.out.println("Remoteworker " + workerId + " received :: ["
+                + topic + " : " + message.getQos() + "] :: " + payload);
+
         if (topic.equals(topic_assign + "/" + client.getClientId())) {
-            Integer Int_result = doWork(payload);
-            String result = Int_result.toString();
-            sendresult(result);
+            int result = doWork(payload);
+            sendResult(result);
         }
     }
 

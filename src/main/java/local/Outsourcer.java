@@ -6,71 +6,126 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Queue;
+import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.List;
+
 
 public class Outsourcer implements Runnable, MqttCallback {
 
-    private  String BROKER_URL = "tcp://test.mosquitto.org:1883";
-    private static Outsourcer outsourcer = null;
-    private  String topic_request = "works/request";
-    private  String topic_assign = "works/assign";
-    private Queue<String> workers = new LinkedList<>();
-    //private Queue<String> result = new LinkedList<>();
-    private Queue<Job> job = new LinkedList<>();
-    MqttClient client = null;
-    private Outsourcer() {
-        this.BROKER_URL = "tcp://test.mosquitto.org:1883";
-        this.topic_request = "works/request";
-        this.topic_assign = "works/assign";
-        this.workers = new LinkedList<>();
+    private final String BROKER_URL    = "tcp://test.mosquitto.org:1883";
+    private final String topic_request = "works/request";
+    private final String topic_assign  = "works/assign";
 
-    }
+    private static Outsourcer outsourcer = null;
+
+    private final Queue<String> workers = new LinkedList<>();
+    private final Queue<Job>    jobQueue = new LinkedList<>();
+
+    private final Map<String, Job>  pendingJobs      = new ConcurrentHashMap<>();
+    private final Map<String, Long> pendingTimestamp = new ConcurrentHashMap<>();
+
+    private static final long TIMEOUT_MS = 5000; // 5 seconds before a job is re-queued
+
+    private MqttClient client = null;
+    private ScheduledExecutorService timerService;
+
+    private Outsourcer() {}
+
     public static Outsourcer getInstance() {
         if (outsourcer == null) {
             outsourcer = new Outsourcer();
         }
         return outsourcer;
     }
+
     @Override
     public void run() {
-
         try {
             String clientId = MqttClient.generateClientId();
             client = new MqttClient(BROKER_URL, clientId);
             client.setCallback(this);
             client.connect();
-            System.out.println("Oursourcer: "+ clientId + " ↗️ Connected to broker: " + BROKER_URL);
+            System.out.println("Outsourcer: " + clientId + "  Connected to " + BROKER_URL);
 
             client.subscribe(topic_request, 2);
-            client.subscribe(topic_assign, 2);
-            int counter;
-            while (true){
-                if (job.isEmpty()) {
-                    if(!Buffer.getInstance().isEmpty()) {
-                        job.add(Buffer.getInstance().getJob());
-                    }
+            client.subscribe(topic_assign,  2);
 
+
+            timerService = Executors.newSingleThreadScheduledExecutor();
+            timerService.scheduleAtFixedRate(this::checkTimeouts, 2, 2, TimeUnit.SECONDS);
+
+            while (true) {
+                // Pull a job from the shared Buffer and hold it ready to assign
+                if (jobQueue.isEmpty()) {
+                    Job job = Buffer.getInstance().getJob();
+                    if (job != null) {
+                        jobQueue.add(job);
+                        System.out.println("Outsourcer: picked up job -> " + job.getString());
+                    }
                 }
-                Thread.sleep(1000);
+                Thread.sleep(500);
             }
+
         } catch (MqttException e) {
-            System.out.println("↗️ Outsourcer MQTT error: " + e.getMessage());
-            e.printStackTrace();
+            System.out.println("Outsourcer MQTT error: " + e.getMessage());
         } catch (InterruptedException e) {
-            System.out.println("↗️ Outsourcer Demo interrupted.");
             Thread.currentThread().interrupt();
-        }catch (Exception e) {
-            System.out.println("Outsourcer Exception" + e.getMessage());
         } finally {
-            if (client == null && client.isConnected()) {
+            if (client != null && client.isConnected()) {
                 try {
+                    timerService.shutdown();
                     client.disconnect();
-                    System.out.println("↗️ Outsourcer Disconnected from broker.");
-                }catch (MqttException e) {
-                    System.err.println("↗️ Outsourcer Error disconnecting: " + e.getMessage());
+                    System.out.println("Outsourcer disconnected.");
+                } catch (MqttException e) {
+                    System.err.println("Outsourcer error disconnecting: " + e.getMessage());
                 }
             }
         }
     }
+
+    private void checkTimeouts() {
+        long now = System.currentTimeMillis();
+
+        List<String> timedOutWorkers = new ArrayList<>();
+
+        for (Map.Entry<String, Long> entry : pendingTimestamp.entrySet()) {
+            if (now - entry.getValue() > TIMEOUT_MS) {
+                timedOutWorkers.add(entry.getKey());
+            }
+        }
+
+        for (String workerId : timedOutWorkers) {
+            Job timedOutJob = pendingJobs.remove(workerId);
+            pendingTimestamp.remove(workerId);
+
+            if (timedOutJob != null) {
+                System.out.println("Outsourcer: TIMEOUT — worker " + workerId
+                        + " went silent, re-queuing job: " + timedOutJob.getString());
+                ((LinkedList<Job>) jobQueue).addFirst(timedOutJob);
+            }
+        }
+
+
+        System.out.println("Outsourcer Timer: " + pendingJobs.size()
+                + " jobs pending, " + jobQueue.size() + " jobs waiting to assign");
+    }
+
+    public void sendWork(String workerId, String encodedJob) {
+        try {
+            if (client != null && client.isConnected()) {
+                String workerTopic = topic_assign + "/" + workerId;
+                MqttMessage msg = new MqttMessage(encodedJob.getBytes());
+                msg.setQos(2);
+                client.publish(workerTopic, msg);
+                System.out.println("Outsourcer: sent job to " + workerId + " -> " + encodedJob);
+            }
+        } catch (MqttException e) {
+            System.out.println("Outsourcer MQTT error: " + e.getMessage());
+        }
+    }
+
+    // Parses "key=value;key=value" strings into a Map
     public static Map<String, String> parseKV(String s) {
         Map<String, String> m = new HashMap<>();
         for (String part : s.split(";")) {
@@ -79,61 +134,57 @@ public class Outsourcer implements Runnable, MqttCallback {
         }
         return m;
     }
-    public void sendWork(String CurrentWorkerId, String works) {
-        try {
-            if (client.isConnected()) {
-                String temp_topic = topic_assign + "/" + CurrentWorkerId;
-                MqttMessage test_msg = new MqttMessage(works.getBytes());
-                test_msg.setQos(2);
-                client.publish(temp_topic, test_msg);
-                System.out.println("\tOutsourcer Sending work: " + new String(test_msg.getPayload()) + " to " + CurrentWorkerId);
-            }
-        } catch (MqttException e) {
-            System.out.println("↗️Outsourcer MQTT error: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
-    @Override
-    public void connectionLost(Throwable cause) {
-        System.out.println("📥 Outsourcer Connection to broker lost: " + cause.getMessage());
-    }
 
     @Override
     public void messageArrived(String topic, MqttMessage message) {
         String payload = new String(message.getPayload());
 
-
-        if (topic.equals(this.topic_assign)) {
-            System.out.println("\tOutsourcer get result: " + payload);
-            //  System.out.println("📥 Delivery :: " + "[" + topic + " : " + message.getQos() + "] :: " + payload);
-
-        }
-        if (topic.equals(this.topic_request)) {
+        if (topic.equals(topic_request)) {
+            // A RemoteWorker is requesting work (Pull model)
             Map<String, String> m = parseKV(payload);
             String workerId = m.get("workerId");
-            int capacity = Integer.parseInt(m.get("capacity"));
 
-            //System.out.println("Outsourcer receive: " + " topic : " + topic + " workerId " + workerId + " capacity: " + capacity);
-            //  System.out.println("📥 Delivery :: " + "[" + topic + " : " + message.getQos() + "] :: " + payload);
+            System.out.println("Outsourcer: worker available -> " + workerId);
             workers.add(workerId);
-            String temp_worker_Id = workers.poll();
-            if(!job.isEmpty()){
-                String temp_job = job.poll().getEncode();
 
-                sendWork(temp_worker_Id,temp_job);
+            // If we have a job ready, assign it immediately
+            if (!jobQueue.isEmpty()) {
+                String nextWorker = workers.poll();
+                Job job = jobQueue.poll();
+
+
+                pendingJobs.put(nextWorker, job);
+                pendingTimestamp.put(nextWorker, System.currentTimeMillis());
+
+                sendWork(nextWorker, job.getEncode());
             }
+        }
 
+        if (topic.equals(topic_assign)) {
+
+            Map<String, String> m = parseKV(payload);
+            String workerId = m.get("workerId");
+            String result   = m.get("result");
+
+            if (workerId != null && pendingJobs.containsKey(workerId)) {
+                Job originalJob = pendingJobs.remove(workerId);
+                pendingTimestamp.remove(workerId);
+                System.out.println("Outsourcer: result for job ["
+                        + originalJob.getString() + "] = " + result
+                        + " (from worker " + workerId + ")");
+            } else {
+                System.out.println("Outsourcer: received result -> " + payload);
+            }
         }
     }
 
     @Override
-    public void deliveryComplete(IMqttDeliveryToken token) {
-        try {
-            //System.out.println("📥 Outsourcer Delivery complete for: " + token.getMessageId());
-        } catch (Exception e) {
-            System.out.println("📥 Outsourcer Delivery complete, but failed to get message ID.");
-        }
+    public void connectionLost(Throwable cause) {
+        System.out.println("Outsourcer: connection lost -> " + cause.getMessage());
     }
 
+    @Override
+    public void deliveryComplete(IMqttDeliveryToken token) {
 
+    }
 }
