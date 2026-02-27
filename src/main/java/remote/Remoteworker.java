@@ -61,7 +61,11 @@ public class Remoteworker implements Runnable, MqttCallback {
         }
     }
     public Integer doWork(String work) {
-
+        try {
+            Thread.sleep(5000); // 5 seconds
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         String[] words = work.split(" ");
         Integer operand1 = Integer.parseInt(words[0]);
         String operator = words[1];
