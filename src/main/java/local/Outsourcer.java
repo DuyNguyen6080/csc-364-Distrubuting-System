@@ -24,6 +24,7 @@ public class Outsourcer implements Runnable, MqttCallback {
 
     private final Map<String, Job>  pendingJobs      = new ConcurrentHashMap<>();
     private final Map<String, Long> pendingTimestamp = new ConcurrentHashMap<>();
+    private final Map<Job, Long> jobQueueTimestamp = new ConcurrentHashMap<>();
 
     private static final long TIMEOUT_MS = 3000; // 5 seconds before a job is re-queued
 
@@ -61,6 +62,7 @@ public class Outsourcer implements Runnable, MqttCallback {
                     Job job = Buffer.getInstance().getJob();
                     if (job != null) {
                         jobQueue.add(job);
+                        jobQueueTimestamp.put(job, System.currentTimeMillis());
                         System.out.println("Outsourcer: picked up job -> " + job.getString());
                     }
                 }
@@ -88,24 +90,38 @@ public class Outsourcer implements Runnable, MqttCallback {
         long now = System.currentTimeMillis();
 
         List<String> timedOutWorkers = new ArrayList<>();
-
         for (Map.Entry<String, Long> entry : pendingTimestamp.entrySet()) {
             if (now - entry.getValue() > TIMEOUT_MS) {
                 timedOutWorkers.add(entry.getKey());
             }
         }
-
         for (String workerId : timedOutWorkers) {
             Job timedOutJob = pendingJobs.remove(workerId);
             pendingTimestamp.remove(workerId);
-
             if (timedOutJob != null) {
                 System.out.println("Outsourcer: TIMEOUT — worker " + workerId
                         + " went silent, re-queuing job: " + timedOutJob.getString());
                 ((LinkedList<Job>) jobQueue).addFirst(timedOutJob);
+                jobQueueTimestamp.put(timedOutJob, System.currentTimeMillis());
             }
         }
 
+
+        List<Job> stuckJobs = new ArrayList<>();
+        for (Map.Entry<Job, Long> entry : jobQueueTimestamp.entrySet()) {
+            if (now - entry.getValue() > TIMEOUT_MS) {
+                stuckJobs.add(entry.getKey());
+            }
+        }
+        for (Job stuckJob : stuckJobs) {
+            jobQueueTimestamp.remove(stuckJob);
+            System.out.println("Outsourcer: TIMEOUT — no worker available for job: "
+                    + stuckJob.getString() + " — re-queuing");
+            // Re-add to queue with fresh timestamp so it gets another chance
+            jobQueue.remove(stuckJob);
+            jobQueue.add(stuckJob);
+            jobQueueTimestamp.put(stuckJob, System.currentTimeMillis());
+        }
 
         System.out.println("Outsourcer Timer: " + pendingJobs.size()
                 + " jobs pending, " + jobQueue.size() + " jobs waiting to assign");
@@ -151,7 +167,7 @@ public class Outsourcer implements Runnable, MqttCallback {
             if (!jobQueue.isEmpty()) {
                 String nextWorker = workers.poll();
                 Job job = jobQueue.poll();
-
+                jobQueueTimestamp.remove(job);
 
                 pendingJobs.put(nextWorker, job);
                 pendingTimestamp.put(nextWorker, System.currentTimeMillis());
