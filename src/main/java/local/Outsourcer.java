@@ -26,7 +26,9 @@ public class Outsourcer implements Runnable, MqttCallback {
     private final Map<String, Long> pendingTimestamp = new ConcurrentHashMap<>();
     private final Map<Job, Long> jobQueueTimestamp = new ConcurrentHashMap<>();
 
-    private static final long TIMEOUT_MS = 3000; // 5 seconds before a job is re-queued
+    private static final long TIMEOUT_MS = 3000;
+    private static final long TIMER_INTERVAL_SEC = 1L;
+    private static final long LOOP_SLEEP_MS = 500;
 
     private MqttClient client = null;
     private ScheduledExecutorService timerService;
@@ -54,19 +56,18 @@ public class Outsourcer implements Runnable, MqttCallback {
 
 
             timerService = Executors.newSingleThreadScheduledExecutor();
-            timerService.scheduleAtFixedRate(this::checkTimeouts, 1, 1, TimeUnit.SECONDS);
+            timerService.scheduleAtFixedRate(this::checkTimeouts, TIMER_INTERVAL_SEC, TIMER_INTERVAL_SEC, TimeUnit.SECONDS);
 
             while (true) {
                 // Pull a job from the shared Buffer and hold it ready to assign
-                if (jobQueue.isEmpty()) {
                     Job job = Buffer.getInstance().getJob();
                     if (job != null) {
                         jobQueue.add(job);
                         jobQueueTimestamp.put(job, System.currentTimeMillis());
                         System.out.println("Outsourcer: picked up job -> " + job.getString());
                     }
-                }
-                Thread.sleep(500);
+
+                Thread.sleep(LOOP_SLEEP_MS);
             }
 
         } catch (MqttException e) {

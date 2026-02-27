@@ -3,6 +3,7 @@ package local;
 public class Producer implements Runnable{
     private String problem;
     private Buffer instanceBuffer;
+    private static final long PRODUCE_INTERVAL_MS = 1000;
     public Producer(Buffer buffer) {
         this.instanceBuffer = Buffer.getInstance();
 
@@ -20,7 +21,7 @@ public class Producer implements Runnable{
                 //System.out.println("Producer producing porblem: " + tempJob.getString() + " ENcode into: " + tempJob.getEncode());
                 instanceBuffer.addJob(tempJob);
                 i++;
-                Thread.sleep(1000);
+                Thread.sleep(PRODUCE_INTERVAL_MS);
             }
         } catch (InterruptedException e) {
             throw new RuntimeException(e);

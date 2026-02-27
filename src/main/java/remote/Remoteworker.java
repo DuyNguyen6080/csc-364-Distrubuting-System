@@ -12,6 +12,8 @@ public class Remoteworker implements Runnable, MqttCallback {
     private final String topic_assign = "works/assign";
     private String workerId;
     private int cpuCores;
+    private static final long REQUEST_INTERVAL_MS = 1000;
+    private static final long WORK_DELAY_MS = 3000;
     MqttClient client = null;
     @Override
     public void run() {
@@ -41,7 +43,7 @@ public class Remoteworker implements Runnable, MqttCallback {
                     System.out.println("Remoteworker: "+"↗️ published to " + topic_request + ": " + message);
 
                 }
-                Thread.sleep(1000);
+                Thread.sleep(REQUEST_INTERVAL_MS);
             }
         } catch (MqttException e) {
             System.out.println("↗️Remoteworker MQTT error: " + e.getMessage());
@@ -62,7 +64,7 @@ public class Remoteworker implements Runnable, MqttCallback {
     }
     public Integer doWork(String work) {
         try {
-            Thread.sleep(5000); // 5 seconds
+            Thread.sleep(WORK_DELAY_MS); // 5 seconds
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
